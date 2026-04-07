@@ -1,50 +1,61 @@
-name: Build llama.cpp for RTX 3060
-
+name: Build llama.cpp (High-Speed CUDA)
 on:
   push:
     branches: [ "master" ]
-  workflow_dispatch: # Allows you to run it manually
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # We use Ubuntu to build the Linux binary for your Arch setup
+    runs-on: ubuntu-latest
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     steps:
-    # 1. CRITICAL: llama.cpp uses submodules for the GGML engine. 
-    # The default template misses 'submodules: recursive'.
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    # 2. INSTALL CUDA: The default runner doesn't have the NVCC compiler.
-    - name: Install CUDA Toolkit
-      uses: Jimver/cuda-toolkit@v0.2.21
-      with:
-        cuda: '12.4.0'
+      # 1. THE CACHE: Stores compiled object files to skip re-compiling unchanged code.
+      - name: Compiler Cache
+        uses: actions/cache@v4 # Using v4 for stability; v5 works similarly
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
 
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential cmake libcurl4-openssl-dev
+      - name: Install CUDA & Build Tools
+        uses: Jimver/cuda-toolkit@v0.2.21
+        with:
+          cuda: '12.4.0'
 
-    - name: Configure CMake
-      # We add -DGGML_CUDA=ON and target architecture 86 (RTX 3060)
-      run: >
-        cmake -B build
-        -DGGML_CUDA=ON
-        -DCMAKE_CUDA_ARCHITECTURES=86
-        -DCMAKE_BUILD_TYPE=Release
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libcurl4-openssl-dev ccache ninja-build
 
-    - name: Build
-      run: cmake --build build --config Release -j $(nproc)
+      - name: Configure CMake
+        # We use Ninja here—it's significantly faster than 'make' for C++
+        run: |
+          export PATH="/usr/lib/ccache:$PATH"
+          cmake -B build -G Ninja \
+            -DGGML_CUDA=ON \
+            -DCMAKE_CUDA_ARCHITECTURES=86 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache
 
-    # 3. COLLECT THE GOODS: This part is missing from the starter template.
-    # It grabs the binaries AND the shared libraries (.so files).
-    - name: Upload Binaries & Libs
-      uses: actions/upload-artifact@v4
-      with:
-        name: llama-cpp-rtx3060-linux
-        path: |
-          build/bin/
-          build/**/*.so
-          build/**/*.a
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Upload Binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-cuda-rtx3060
+          # Compression level 0-9; 1 is faster and usually enough
+          compression-level: 1 
+          path: |
+            build/bin/
+            build/**/*.so
+            build/**/*.a
