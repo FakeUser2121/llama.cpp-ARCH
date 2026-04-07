@@ -1,0 +1,50 @@
+name: Build llama.cpp for RTX 3060
+
+on:
+  push:
+    branches: [ "master" ]
+  workflow_dispatch: # Allows you to run it manually
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # We use Ubuntu to build the Linux binary for your Arch setup
+
+    steps:
+    # 1. CRITICAL: llama.cpp uses submodules for the GGML engine. 
+    # The default template misses 'submodules: recursive'.
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    # 2. INSTALL CUDA: The default runner doesn't have the NVCC compiler.
+    - name: Install CUDA Toolkit
+      uses: Jimver/cuda-toolkit@v0.2.21
+      with:
+        cuda: '12.4.0'
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake libcurl4-openssl-dev
+
+    - name: Configure CMake
+      # We add -DGGML_CUDA=ON and target architecture 86 (RTX 3060)
+      run: >
+        cmake -B build
+        -DGGML_CUDA=ON
+        -DCMAKE_CUDA_ARCHITECTURES=86
+        -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: cmake --build build --config Release -j $(nproc)
+
+    # 3. COLLECT THE GOODS: This part is missing from the starter template.
+    # It grabs the binaries AND the shared libraries (.so files).
+    - name: Upload Binaries & Libs
+      uses: actions/upload-artifact@v4
+      with:
+        name: llama-cpp-rtx3060-linux
+        path: |
+          build/bin/
+          build/**/*.so
+          build/**/*.a
