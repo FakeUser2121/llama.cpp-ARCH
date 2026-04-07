@@ -1,12 +1,15 @@
-name: Build llama.cpp (High-Speed CUDA)
+name: Build and Release llama.cpp
 on:
   push:
     branches: [ "master" ]
+    tags: [ "v*" ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
 
@@ -16,9 +19,8 @@ jobs:
         with:
           submodules: recursive
 
-      # 1. THE CACHE: Stores compiled object files to skip re-compiling unchanged code.
       - name: Compiler Cache
-        uses: actions/cache@v4 # Using v4 for stability; v5 works similarly
+        uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ github.sha }}
@@ -32,10 +34,9 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake libcurl4-openssl-dev ccache ninja-build
+          sudo apt-get install -y build-essential cmake libcurl4-openssl-dev ccache ninja-build zip
 
       - name: Configure CMake
-        # We use Ninja here—it's significantly faster than 'make' for C++
         run: |
           export PATH="/usr/lib/ccache:$PATH"
           cmake -B build -G Ninja \
@@ -49,13 +50,25 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Upload Binaries
-        uses: actions/upload-artifact@v4
+      - name: Package Binaries
+        run: |
+          mkdir -p dist
+          # Copy executables (modern llama.cpp uses llama- prefix)
+          cp build/bin/llama-* dist/ 2>/dev/null || cp build/bin/* dist/
+          # Copy shared libraries
+          cp build/bin/*.so dist/ 2>/dev/null || true
+          cp build/*.so dist/ 2>/dev/null || true
+          cd dist && zip -r ../llama-rtx3060-linux.zip .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master'
         with:
-          name: llama-cuda-rtx3060
-          # Compression level 0-9; 1 is faster and usually enough
-          compression-level: 1
-          path: |
-            build/bin/
-            build/**/*.so
-            build/**/*.a
+          files: llama-rtx3060-linux.zip
+          tag_name: latest
+          name: "Latest Build (RTX 3060)"
+          body: "Automated CUDA build for RTX 3060 (Ampere)."
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
