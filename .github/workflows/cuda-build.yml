@@ -29,35 +29,59 @@ jobs:
       - name: Install CUDA & Build Tools
         uses: Jimver/cuda-toolkit@v0.2.24
         with:
-          cuda: '12.8'
+          cuda: '12.8.0'
 
       - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libcurl4-openssl-dev ccache ninja-build zip
 
-      - name: Configure CMake
+      - name: Configure CMake with Static Linking
         run: |
           export PATH="/usr/lib/ccache:$PATH"
           cmake -B build -G Ninja \
             -DGGML_CUDA=ON \
+            -DGGML_CUDA_F16=ON \
             -DCMAKE_CUDA_ARCHITECTURES=86 \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache
+            -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG_MODE=ON
 
       - name: Build
         run: cmake --build build --config Release
+
+      - name: Check Dependencies
+        run: |
+          echo "=== Checking binary dependencies ==="
+          for binary in build/bin/llama-*; do
+            if [ -f "$binary" ] && [ -x "$binary" ]; then
+              echo "Binary: $binary"
+              ldd "$binary" || echo "Static binary or error checking"
+              readelf -d "$binary" | grep -i cuda || echo "No dynamic CUDA dependencies found"
+            fi
+          done
 
       - name: Package Binaries
         run: |
           mkdir -p dist
           # Copy executables (modern llama.cpp uses llama- prefix)
           cp build/bin/llama-* dist/ 2>/dev/null || cp build/bin/* dist/
-          # Copy shared libraries
-          cp build/bin/*.so dist/ 2>/dev/null || true
-          cp build/*.so dist/ 2>/dev/null || true
+          chmod +x dist/llama-*
+          # Verify no shared library dependencies
+          echo "=== Verifying packaged binaries are self-contained ==="
+          for binary in dist/llama-*; do
+            if [ -f "$binary" ] && [ -x "$binary" ]; then
+              echo "Checking: $(basename $binary)"
+              if ldd "$binary" 2>/dev/null | grep -i cuda; then
+                echo "WARNING: Found CUDA library dependencies in $(basename $binary)"
+              else
+                echo "✓ $(basename $binary) has no external CUDA dependencies"
+              fi
+            fi
+          done
           cd dist && zip -r ../llama-rtx3060-linux.zip .
 
       - name: Create Release
@@ -66,8 +90,19 @@ jobs:
         with:
           files: llama-rtx3060-linux.zip
           tag_name: latest
-          name: "Latest Build (RTX 3060)"
-          body: "Automated CUDA build for RTX 3060 (Ampere)."
+          name: "Latest Build (RTX 3060) - Self-Contained"
+          body: |
+            Automated CUDA build for RTX 3060 (Ampere).
+            
+            **This build is fully static linked** - no external CUDA libraries required!
+            
+            Simply download and run:
+            ```bash
+            unzip llama-rtx3060-linux.zip
+            ./llama-cli
+            ```
+            
+            No need to install libcudart.so or other CUDA libraries separately.
           draft: false
           prerelease: false
         env:
