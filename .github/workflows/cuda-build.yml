@@ -54,7 +54,7 @@ jobs:
         with:
           name: llama-cuda-rtx3060
           # Compression level 0-9; 1 is faster and usually enough
-          compression-level: 1 
+          compression-level: 1
           path: |
             build/bin/
             build/**/*.so
