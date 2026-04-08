@@ -27,9 +27,9 @@ jobs:
           restore-keys: ccache-${{ runner.os }}-
 
       - name: Install CUDA & Build Tools
-        uses: Jimver/cuda-toolkit@v0.2.24
+        uses: Jimver/cuda-toolkit@v0.2.29
         with:
-          cuda: '13.0.0'
+          cuda: '13.2.0'
 
       - name: Install Dependencies
         run: |
