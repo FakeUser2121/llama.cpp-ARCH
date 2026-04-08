@@ -29,7 +29,7 @@ jobs:
       - name: Install CUDA & Build Tools
         uses: Jimver/cuda-toolkit@v0.2.24
         with:
-          cuda: '12.8.0'
+          cuda: '13.2.0'
 
       - name: Install Dependencies
         run: |
@@ -47,7 +47,7 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
-            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_FIND_PACKAGE_PREFER_CONFIG_MODE=ON
 
       - name: Build
