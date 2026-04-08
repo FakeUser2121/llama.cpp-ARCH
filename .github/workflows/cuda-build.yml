@@ -43,11 +43,12 @@ jobs:
             -DGGML_CUDA=ON \
             -DGGML_CUDA_F16=ON \
             -DCMAKE_CUDA_ARCHITECTURES=86 \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DGGML_CUDA_COMPRESSION_MODE=size \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
-            -DBUILD_SHARED_LIBS=ON \
+            -DBUILD_SHARED_LIBS=OFF \
             -DCMAKE_FIND_PACKAGE_PREFER_CONFIG_MODE=ON
 
       - name: Build
@@ -82,13 +83,13 @@ jobs:
               fi
             fi
           done
-          cd dist && zip -r ../llama-rtx3060-linux.zip .
+          cd dist && zip -r ../Llama-RTX-3060-Linux-Cuda-13.zip .
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master'
         with:
-          files: llama-rtx3060-linux.zip
+          files: Llama-RTX-3060-Linux-Cuda-13.zip
           tag_name: latest
           name: "Latest Build (RTX 3060) - Self-Contained"
           body: |
@@ -98,7 +99,7 @@ jobs:
             
             Simply download and run:
             ```bash
-            unzip llama-rtx3060-linux.zip
+            unzip Llama-RTX-3060-Linux-Cuda-13.zip
             ./llama-cli
             ```
             
