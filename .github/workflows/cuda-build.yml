@@ -42,6 +42,7 @@ jobs:
           cmake -B build -G Ninja \
             -DGGML_CUDA=ON \
             -DGGML_CUDA_F16=ON \
+            -DTURBO4_USE_4BIT=1 \
             -DCMAKE_CUDA_ARCHITECTURES=86 \
             -DCMAKE_BUILD_TYPE=MinSizeRel \
             -DGGML_CUDA_COMPRESSION_MODE=size \
@@ -50,6 +51,7 @@ jobs:
             -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
             -DBUILD_SHARED_LIBS=OFF \
             -DCMAKE_FIND_PACKAGE_PREFER_CONFIG_MODE=ON
+            
 
       - name: Build
         run: cmake --build build --config Release
