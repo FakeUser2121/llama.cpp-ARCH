@@ -1,0 +1,109 @@
+name: Build and Release llama.cpp
+on:
+  push:
+    branches: [ "feature/planarquant" ]    # was "master"
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Compiler Cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
+
+      - name: Install CUDA & Build Tools
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: '13.2.0'
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libcurl4-openssl-dev ccache ninja-build zip
+
+      - name: Configure CMake with Static Linking
+        run: |
+          export PATH="/usr/lib/ccache:$PATH"
+          cmake -B build -G Ninja \
+            -DGGML_CUDA=ON \
+            -DGGML_CUDA_F16=ON \
+            -DTURBO4_USE_4BIT=1 \
+            -DCMAKE_CUDA_ARCHITECTURES=86 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG_MODE=ON
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Check Dependencies
+        run: |
+          echo "=== Checking binary dependencies ==="
+          for binary in build/bin/llama-*; do
+            if [ -f "$binary" ] && [ -x "$binary" ]; then
+              echo "Binary: $binary"
+              ldd "$binary" || echo "Static binary or error checking"
+              readelf -d "$binary" | grep -i cuda || echo "No dynamic CUDA dependencies found"
+            fi
+          done
+
+      - name: Package Binaries
+        run: |
+          mkdir -p dist
+          cp build/bin/llama-* dist/ 2>/dev/null || cp build/bin/* dist/
+          chmod +x dist/llama-*
+          echo "=== Verifying packaged binaries are self-contained ==="
+          for binary in dist/llama-*; do
+            if [ -f "$binary" ] && [ -x "$binary" ]; then
+              echo "Checking: $(basename $binary)"
+              if ldd "$binary" 2>/dev/null | grep -i cuda; then
+                echo "WARNING: Found CUDA library dependencies in $(basename $binary)"
+              else
+                echo "✓ $(basename $binary) has no external CUDA dependencies"
+              fi
+            fi
+          done
+          cd dist && zip -r ../Llama-planarquant4-RTX-3060-Linux-Cuda-13.zip .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/Turboquant/kvcache'
+        with:
+          files: Llama-planarquant4-RTX-3060-Linux-Cuda-13.zip
+          tag_name: latest
+          name: "Latest Build (RTX 3060) - Self-Contained"
+          body: |
+            Automated CUDA build for RTX 3060 (Ampere).
+            With Turbo quant(ACTUALLY). With planar or rotor quant.
+            
+            **This build is fully static linked** - no external CUDA libraries required!
+            
+            Simply download and run:
+            ```bash
+            unzip Llama-planarquant4-RTX-3060-Linux-Cuda-13.zip
+            ./llama-cli
+            ```
+            
+            No need to install libcudart.so or other CUDA libraries separately.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
