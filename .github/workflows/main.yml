@@ -37,19 +37,26 @@ jobs:
           sudo apt-get install -y build-essential cmake libcurl4-openssl-dev ccache ninja-build zip
 
       - name: Configure CMake with Static Linking
-        run: |
-          export PATH="/usr/lib/ccache:$PATH"
-          cmake -B build -G Ninja \
-            -DGGML_CUDA=ON \
-            -DGGML_CUDA_F16=ON \
-            -DTURBO4_USE_4BIT=1 \
-            -DCMAKE_CUDA_ARCHITECTURES=86 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG_MODE=ON
+  run: |
+    export PATH="/usr/lib/ccache:$PATH"
+    cmake -B build -G Ninja \
+      -DGGML_CUDA=ON \
+      -DGGML_CUDA_F16=ON \
+      -DTURBO4_USE_4BIT=1 \
+      -DCMAKE_CUDA_ARCHITECTURES=86 \
+      -DCMAKE_BUILD_TYPE=MinSizeRel \
+      -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+      -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+      -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DCMAKE_FIND_PACKAGE_PREFER_CONFIG_MODE=ON \
+      -DCMAKE_C_FLAGS="-Os -fdata-sections -ffunction-sections -flto" \
+      -DCMAKE_CXX_FLAGS="-Os -fdata-sections -ffunction-sections -flto" \
+      -DCMAKE_EXE_LINKER_FLAGS="-Wl,--gc-sections -Wl,--strip-all -Wl,-O2" \
+      -DCMAKE_CUDA_FLAGS="-O2 --generate-code arch=compute_86,code=sm_86" \
+      -DLLAMA_BUILD_TESTS=OFF \
+      -DLLAMA_BUILD_EXAMPLES=OFF \
+      -DLLAMA_BUILD_SERVER=OFF
 
       - name: Build
         run: cmake --build build --config Release
