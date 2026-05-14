@@ -49,7 +49,7 @@ jobs:
           cuda: "13.2.0"          # 12.4 no longer hosted, 12.8 is stable + supports sm_86
           method: network
           linux-local-args: '["--toolkit"]'   # skips samples, cuts download from ~4GB to ~2GB
-          sub-packages: '["nvcc", "cudart-dev"]'
+          sub-packages: '["nvcc", "cudart-dev", "libcublas-dev", "libcurand-dev"]'
 
       # -----------------------------------------------------------------------
       - name: Install build dependencies
