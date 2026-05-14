@@ -49,6 +49,7 @@ jobs:
           cuda: "13.2.0"          # 12.4 no longer hosted, 12.8 is stable + supports sm_86
           method: local
           linux-local-args: '["--toolkit"]'   # skips samples, cuts download from ~4GB to ~2GB
+          sub-packages: '["nvcc", "cudart-dev"]'
 
       # -----------------------------------------------------------------------
       - name: Install build dependencies
@@ -78,7 +79,8 @@ jobs:
             -DGGML_NATIVE=OFF \
             -DLLAMA_CURL=OFF \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCUDA_USE_STATIC_CUDA_RUNTIME=ON
 
       # -----------------------------------------------------------------------
       - name: Build
