@@ -44,9 +44,9 @@ jobs:
       # -----------------------------------------------------------------------
 # AFTER
       - name: Install CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.26
+        uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: "12.8.0"          # 12.4 no longer hosted, 12.8 is stable + supports sm_86
+          cuda: "13.2.0"          # 12.4 no longer hosted, 12.8 is stable + supports sm_86
           method: local
           linux-local-args: '["--toolkit"]'   # skips samples, cuts download from ~4GB to ~2GB
 
