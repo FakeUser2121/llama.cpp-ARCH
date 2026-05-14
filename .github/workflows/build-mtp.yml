@@ -47,9 +47,8 @@ jobs:
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
           cuda: "13.2.0"          # 12.4 no longer hosted, 12.8 is stable + supports sm_86
-          method: network
+          method: local
           linux-local-args: '["--toolkit"]'   # skips samples, cuts download from ~4GB to ~2GB
-          sub-packages: '["nvcc", "cudart-dev", "libcublas-dev", "libcurand-dev"]'
 
       # -----------------------------------------------------------------------
       - name: Install build dependencies
