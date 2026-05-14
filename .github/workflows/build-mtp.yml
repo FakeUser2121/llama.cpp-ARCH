@@ -1,0 +1,186 @@
+name: Build llama.cpp MTP (RTX 3060)
+
+on:
+  workflow_dispatch:         # manual trigger from Actions tab
+    inputs:
+      release_tag:
+        description: "Release tag (e.g. v1.0-mtp)"
+        required: true
+        default: "v1.0-mtp"
+  push:
+    tags:
+      - "v*-mtp"             # also triggers on git tag push like: git tag v1.0-mtp && git push --tags
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest   # GitHub gives ~14 GB RAM, 2-core, plenty for building
+
+    permissions:
+      contents: write        # needed to create GitHub releases
+
+    env:
+      ARCHIVE_NAME: llamacpp-mtp-rtx3060-linux
+      CUDA_ARCH: "86"        # RTX 3060 = Ampere sm_86
+      MTP_REMOTE: https://github.com/am17an/llama.cpp.git
+      MTP_BRANCH: mtp-clean
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: Checkout your fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # full history needed for merge
+
+      # -----------------------------------------------------------------------
+      - name: Merge MTP branch from am17an
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name  "GitHub Actions"
+          git remote add mtp-upstream "$MTP_REMOTE"
+          git fetch mtp-upstream "$MTP_BRANCH"
+          git merge --no-ff "mtp-upstream/$MTP_BRANCH" \
+            -m "merge: MTP support from am17an/llama.cpp mtp-clean [ci]"
+
+      # -----------------------------------------------------------------------
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.16
+        with:
+          cuda: "12.4.0"
+          method: network
+          sub-packages: '["nvcc", "cudart-dev"]'   # only what cmake needs to compile
+
+      # -----------------------------------------------------------------------
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build \
+            libgomp1 \
+            ccache                    # speeds up rebuilds on repeat runs
+
+      # -----------------------------------------------------------------------
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-cuda${{ env.CUDA_ARCH }}-${{ github.sha }}
+          restore-keys: |
+            ccache-cuda${{ env.CUDA_ARCH }}-
+
+      # -----------------------------------------------------------------------
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DGGML_CUDA=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCH}" \
+            -DGGML_NATIVE=OFF \
+            -DLLAMA_CURL=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      # -----------------------------------------------------------------------
+      - name: Build
+        run: cmake --build build --config Release -j$(nproc)
+
+      # -----------------------------------------------------------------------
+      - name: Package binaries
+        run: |
+          mkdir -p release/bin
+
+          # copy all built executables
+          cp build/bin/* release/bin/ 2>/dev/null || true
+          # copy any shared libs
+          find build -name "*.so" -exec cp {} release/bin/ \; 2>/dev/null || true
+
+          echo "--- Packaged binaries ---"
+          ls -lh release/bin/
+
+          tar -czf "${ARCHIVE_NAME}.tar.gz" -C release bin/
+          echo "Archive size: $(du -sh ${ARCHIVE_NAME}.tar.gz | cut -f1)"
+
+      # -----------------------------------------------------------------------
+      - name: Split archive into <1.8 GB parts
+        run: |
+          split \
+            --bytes=1800M \
+            --suffix-length=2 \
+            --numeric-suffixes=1 \
+            "${ARCHIVE_NAME}.tar.gz" \
+            "${ARCHIVE_NAME}.tar.gz.part"
+
+          echo "--- Split parts ---"
+          ls -lh "${ARCHIVE_NAME}".tar.gz.part*
+
+      # -----------------------------------------------------------------------
+      - name: Generate reassemble script
+        run: |
+          cat > reassemble.sh << 'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          ARCHIVE_NAME="llamacpp-mtp-rtx3060-linux"
+
+          echo "Reassembling parts..."
+          cat "${ARCHIVE_NAME}".tar.gz.part* > "${ARCHIVE_NAME}.tar.gz"
+
+          echo "Verifying archive..."
+          if tar -tzf "${ARCHIVE_NAME}.tar.gz" > /dev/null 2>&1; then
+            echo "✅ Archive OK"
+          else
+            echo "❌ Archive corrupted — re-download the parts"
+            exit 1
+          fi
+
+          echo "Extracting..."
+          tar -xzf "${ARCHIVE_NAME}.tar.gz"
+          chmod +x bin/*
+
+          echo ""
+          echo "✅ Done! Binaries are in ./bin/"
+          echo "Example:"
+          echo "  ./bin/llama-server --model Qwen3.6-35B-A3B-MTP-Q4_K_M.gguf \\"
+          echo "    --n-gpu-layers 30 --ctx-size 512 --port 8000"
+          EOF
+          chmod +x reassemble.sh
+
+      # -----------------------------------------------------------------------
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.release_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
+          fi
+
+      # -----------------------------------------------------------------------
+      - name: Create GitHub Release and upload artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "llama.cpp MTP build — RTX 3060 (${{ steps.tag.outputs.tag }})"
+          body: |
+            ## llama.cpp with MTP (Multi-Token Prediction) support
+            Built from your fork merged with [am17an/llama.cpp mtp-clean](https://github.com/am17an/llama.cpp/tree/mtp-clean).
+
+            **Target GPU:** RTX 3060 (CUDA sm_86, Ampere)
+            **CUDA:** 12.4
+
+            ### How to use
+            1. Download all `.part*` files and `reassemble.sh` into the same folder
+            2. Run: `bash reassemble.sh`
+            3. Binaries appear in `./bin/`
+
+            ```bash
+            ./bin/llama-server \
+              --model Qwen3.6-35B-A3B-MTP-Q4_K_M.gguf \
+              --n-gpu-layers 30 \
+              --ctx-size 512 \
+              --port 8000
+            ```
+          files: |
+            llamacpp-mtp-rtx3060-linux.tar.gz.part*
+            reassemble.sh
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: true   # mark as pre-release since MTP PR is still draft
